@@ -1,11 +1,12 @@
-import type { BaseComponentProps, ComponentContext, Disposable, PiletApi } from 'piral-core';
+import type { BaseComponentProps, Disposable, PiletApi } from 'piral-core';
 import type { BehaviorSubject } from 'rxjs';
-import type { PrepareBootstrapResult } from './types';
-import { startup } from './startup';
+import type { NgModuleInt } from './types';
 import { getAnnotations } from './utils';
 import { createModuleInstance, getModuleInstance, defineModule } from './module';
 
-export function prepareBootstrap(moduleOrComponent: any, piral: PiletApi): PrepareBootstrapResult {
+const registry = new Map<any, any>();
+
+function prepareBootstrap(moduleOrComponent: any) {
   const [annotation] = getAnnotations(moduleOrComponent);
   const standalone = annotation?.standalone;
 
@@ -16,27 +17,31 @@ export function prepareBootstrap(moduleOrComponent: any, piral: PiletApi): Prepa
     const [component] = annotation.bootstrap;
     annotation.exports = [component];
     defineModule(moduleOrComponent);
-    return [...getModuleInstance(component, standalone, piral), component];
-  } else {
+    return component;
+  } else if (!getModuleInstance(moduleOrComponent, standalone)) {
     // usually contains things like selector, template or templateUrl, changeDetection, ...
-    const result =
-      getModuleInstance(moduleOrComponent, standalone, piral) ||
-      createModuleInstance(moduleOrComponent, standalone, piral);
-    return [...result, moduleOrComponent];
+    createModuleInstance(moduleOrComponent, standalone);
   }
+
+  return moduleOrComponent;
 }
 
 export async function bootstrap<TProps extends BaseComponentProps>(
-  result: PrepareBootstrapResult,
+  angular: Promise<NgModuleInt>,
+  piral: PiletApi,
+  moduleOrComponent: any,
   node: HTMLElement,
   props: BehaviorSubject<TProps>,
-  context: ComponentContext,
 ): Promise<Disposable> {
-  const [selectedModule, ngOptions, component] = result;
-  const ref = await startup(selectedModule, context, ngOptions);
+  const ref = await angular;
+
+  if (!registry.has(moduleOrComponent)) {
+    registry.set(moduleOrComponent, prepareBootstrap(moduleOrComponent));
+  }
 
   if (ref) {
-    ref.instance.attach(component, node, props);
+    const component = registry.get(moduleOrComponent);
+    ref.instance.attach(piral, component, node, props);
     return () => ref.instance.detach(component, node);
   }
 

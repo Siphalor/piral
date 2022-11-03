@@ -1,10 +1,11 @@
 import type { ForeignComponent, BaseComponentProps, Disposable } from 'piral-core';
-import type { NgModuleDefiner, PrepareBootstrapResult } from './types';
+import type { NgModuleDefiner, NgModuleInt } from './types';
 import { BehaviorSubject } from 'rxjs';
 import { NgExtension } from './NgExtension';
 import { enqueue } from './queue';
 import { defineModule } from './module';
-import { bootstrap, prepareBootstrap } from './bootstrap';
+import { bootstrap } from './bootstrap';
+import { startup } from './startup';
 
 export interface NgConverterOptions {}
 
@@ -21,25 +22,20 @@ interface NgState<TProps> {
 }
 
 export function createConverter(_: NgConverterOptions = {}): NgConverter {
-  const registry = new Map<any, PrepareBootstrapResult>();
+  let angular: Promise<NgModuleInt>;
+
   const convert = <TProps extends BaseComponentProps>(component: any): ForeignComponent<TProps> => ({
     mount(el, props, ctx, locals: NgState<TProps>) {
+      if (!angular) {
+        angular = startup(ctx);
+      }
+
       locals.active = true;
-
-      if (!registry.has(component)) {
-        registry.set(component, prepareBootstrap(component, props.piral));
-      }
-
-      if (!locals.props) {
-        locals.props = new BehaviorSubject(props);
-      }
-
-      if (!locals.queued) {
-        locals.queued = Promise.resolve();
-      }
+      locals.props = new BehaviorSubject(props);
+      locals.queued = Promise.resolve();
 
       locals.queued = locals.queued.then(() =>
-        enqueue(() => locals.active && bootstrap(registry.get(component), el, locals.props, ctx)),
+        enqueue(() => locals.active && bootstrap(angular, props.piral, component, el, locals.props)),
       );
     },
     update(el, props, ctx, locals: NgState<TProps>) {

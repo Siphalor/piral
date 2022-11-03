@@ -1,4 +1,4 @@
-import type { PlatformRef, NgModuleRef } from '@angular/core';
+import type { NgModuleRef } from '@angular/core';
 import type { ForeignComponent } from 'piral-core';
 
 declare module 'piral-core/lib/types/custom' {
@@ -8,18 +8,6 @@ declare module 'piral-core/lib/types/custom' {
     ng(component: NgComponent): ForeignComponent<TProps>;
   }
 }
-
-/**
- * Options passed through to Angular `bootstrapModule`.
- *
- * Mainly to specify Noop Zone, but also includes compiler specific settings.
- * See https://angular.io/api/core/PlatformRef#bootstrapModule for possible values.
- */
-export type NgOptions = Parameters<PlatformRef['bootstrapModule']>[1];
-
-export type ModuleInstanceResult = [any, NgOptions];
-
-export type PrepareBootstrapResult = [...ModuleInstanceResult, any];
 
 export type NgModuleInt = NgModuleRef<any> & { _destroyed: boolean };
 
@@ -32,7 +20,7 @@ export interface NgModuleDefiner {
    * @param ngModule The module to use for running Angular.
    * @param opts The options to pass when bootstrapping.
    */
-  (module: any, opts?: NgOptions): void;
+  (module: any): void;
 }
 
 export interface NgComponent {

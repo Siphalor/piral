@@ -1,8 +1,8 @@
 import type { ComponentContext } from 'piral-core';
-import type { NgOptions } from './types';
 import { enableProdMode, NgModuleRef, NgZone } from '@angular/core';
 import { APP_BASE_HREF } from '@angular/common';
 import { platformBrowserDynamic } from '@angular/platform-browser-dynamic';
+import { BootstrapModule } from './BootstrapModule';
 import { getNgVersion } from './utils';
 
 function getVersionHandler(versions: Record<string, () => void>) {
@@ -15,52 +15,41 @@ const runningModules: Array<[any, NgModuleInt]> = [];
 
 export type NgModuleInt = NgModuleRef<any> & { _destroyed: boolean };
 
-export function startup(
-  BootstrapModule: any,
-  context: ComponentContext,
-  ngOptions?: NgOptions,
-): Promise<void | NgModuleInt> {
-  const runningModule = runningModules.find(([ref]) => ref === BootstrapModule);
+export function startup(context: ComponentContext): Promise<NgModuleInt> {
+  const path = context.publicPath || '/';
+  const platform = platformBrowserDynamic([
+    { provide: 'Context', useValue: context },
+    { provide: APP_BASE_HREF, useValue: path },
+  ]);
+  const id = Math.random().toString(36);
+  const zoneIdentifier = `piral-ng:${id}`;
 
-  if (runningModule) {
-    const [, instance] = runningModule;
-    return Promise.resolve(instance);
-  } else {
-    const path = context.publicPath || '/';
-    const platform = platformBrowserDynamic([
-      { provide: 'Context', useValue: context },
-      { provide: APP_BASE_HREF, useValue: path },
-    ]);
-    const id = Math.random().toString(36);
-    const zoneIdentifier = `piral-ng:${id}`;
+  // This is a hack, since NgZone doesn't allow you to configure the property that identifies your zone.
+  // See:
+  // - https://github.com/PlaceMe-SAS/single-spa-angular-cli/issues/33
+  // - https://github.com/angular/angular/blob/a14dc2d7a4821a19f20a9547053a5734798f541e/packages/core/src/zone/ng_zone.ts#L144
+  // - https://github.com/angular/angular/blob/a14dc2d7a4821a19f20a9547053a5734798f541e/packages/core/src/zone/ng_zone.ts#L257
+  // @ts-ignore
+  NgZone.isInAngularZone = () => window.Zone.current._properties[zoneIdentifier] === true;
 
-    // This is a hack, since NgZone doesn't allow you to configure the property that identifies your zone.
-    // See:
-    // - https://github.com/PlaceMe-SAS/single-spa-angular-cli/issues/33
-    // - https://github.com/angular/angular/blob/a14dc2d7a4821a19f20a9547053a5734798f541e/packages/core/src/zone/ng_zone.ts#L144
-    // - https://github.com/angular/angular/blob/a14dc2d7a4821a19f20a9547053a5734798f541e/packages/core/src/zone/ng_zone.ts#L257
-    // @ts-ignore
-    NgZone.isInAngularZone = () => window.Zone.current._properties[zoneIdentifier] === true;
+  return platform
+    .bootstrapModule(BootstrapModule)
+    .catch((err) => console.log(err))
+    .then((instance: NgModuleInt) => {
+      if (instance) {
+        const zone = instance.injector.get(NgZone);
+        // @ts-ignore
+        const z = zone?._inner ?? zone?.inner;
 
-    return platform
-      .bootstrapModule(BootstrapModule, ngOptions)
-      .catch((err) => console.log(err))
-      .then((instance: NgModuleInt) => {
-        if (instance) {
-          const zone = instance.injector.get(NgZone);
-          // @ts-ignore
-          const z = zone?._inner ?? zone?.inner;
-
-          if (z && '_properties' in z) {
-            z._properties[zoneIdentifier] = true;
-          }
-
-          runningModules.push([BootstrapModule, instance]);
+        if (z && '_properties' in z) {
+          z._properties[zoneIdentifier] = true;
         }
 
-        return instance;
-      });
-  }
+        runningModules.push([BootstrapModule, instance]);
+      }
+
+      return instance;
+    });
 }
 
 if (process.env.NODE_ENV === 'development') {
